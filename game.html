@@ -12,6 +12,10 @@
       display: flex; justify-content: center; align-items: center;
       overflow: hidden;
     }
+    #game-container {
+      width: min(596px, 100vw);
+      height: min(842px, 100vh);
+    }
     #game-container canvas { display: block; }
   </style>
 </head>
@@ -861,7 +865,7 @@ new Phaser.Game({
   parent:          'game-container',
   scene:           [BootScene, GameScene, UIScene],
   scale: {
-    mode:       Phaser.Scale.NONE,
+    mode:       Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH,
   },
 });
