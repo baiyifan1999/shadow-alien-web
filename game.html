@@ -7,321 +7,864 @@
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     html, body {
-      width: 100%;
-      height: 100%;
+      width: 100%; height: 100%;
       background: #000;
-      display: flex;
-      justify-content: center;
-      align-items: center;
+      display: flex; justify-content: center; align-items: center;
       overflow: hidden;
     }
     #game-container canvas { display: block; }
   </style>
 </head>
 <body>
-  <div id="game-container"></div>
+<div id="game-container"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/phaser/3.60.0/phaser.min.js"></script>
+<script>
+'use strict';
 
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/phaser/3.60.0/phaser.min.js"></script>
-  <script>
-  // ═══════════════════════════════════════════════════════════════════════════
-  // GAME DATA  (mirrors gameData.properties)
-  // ═══════════════════════════════════════════════════════════════════════════
-  const GAME_DATA = {
-    window: { width: 596, height: 842 },
+// ═══════════════════════════════════════════════════════════════════════════
+// GAME DATA  (mirrors gameData.properties)
+// ═══════════════════════════════════════════════════════════════════════════
+const W = 596, H = 842;
 
-    player: {
-      posY:                 700,
-      speed:                5,
-      initialLives:         3,
-      shootCooldown:        20,
-      hitInvincibilityTime: 120,
+const CFG = {
+  player: {
+    posY: 700, speed: 5, initialLives: 3,
+    shootCooldown: 20, hitInvincibilityTime: 120,
+  },
+  projectile:      { speed: 8 },
+  enemyProjectile: { speed: 4 },
+  enemy:           { shooting: { firingRate: 90 } },
+  explosion:       { small: { duration: 30 }, large: { duration: 60 } },
+  powerup: {
+    shield:   { speed: 2, duration: 300 },
+    life:     { speed: 2 },
+    cooldown: { speed: 2, duration: 300 },
+    engine:   { speed: 2, duration: 300 },
+  },
+  score: { regular: 100, strafing: 150, shooting: 200, waveCompleted: 500, gotHit: 50 },
+  ui: {
+    lives:     { startX: 22, y: 24, gap: 38 },
+    score:     { x: 20, y: 60 },
+    wave:      { x: 20, y: 86 },
+    timescale: { x: 20, y: 112 },
+  },
+  // Wave schedule — mirrors wave.N.enemy.I.* and wave.N.powerup.J.* properties
+  waves: [
+    // Wave 1 — regular enemies only
+    {
+      enemies: [
+        { arrivalTime:   0, posX: 150, speed: 2,   type: 'regular'  },
+        { arrivalTime:  60, posX: 446, speed: 2,   type: 'regular'  },
+        { arrivalTime: 120, posX: 298, speed: 2,   type: 'regular'  },
+        { arrivalTime: 200, posX: 100, speed: 2,   type: 'regular'  },
+        { arrivalTime: 260, posX: 496, speed: 2,   type: 'regular'  },
+      ],
+      powerups: [
+        { arrivalTime: 180, posX: 298, type: 'life' },
+      ],
     },
-
-    projectile: {
-      speed: 8,
+    // Wave 2 — strafing introduced
+    {
+      enemies: [
+        { arrivalTime:   0, posX: 150, speed: 2,   type: 'regular'  },
+        { arrivalTime:  30, posX: 446, speed: 2.5, type: 'strafing' },
+        { arrivalTime: 120, posX: 298, speed: 2,   type: 'regular'  },
+        { arrivalTime: 180, posX: 200, speed: 2.5, type: 'strafing' },
+        { arrivalTime: 240, posX: 400, speed: 2,   type: 'regular'  },
+        { arrivalTime: 310, posX: 298, speed: 2.5, type: 'strafing' },
+      ],
+      powerups: [
+        { arrivalTime:  90, posX: 100, type: 'shield'   },
+        { arrivalTime: 380, posX: 496, type: 'cooldown' },
+      ],
     },
-  };
+    // Wave 3 — shooting enemies introduced
+    {
+      enemies: [
+        { arrivalTime:   0, posX: 150, speed: 2,   type: 'shooting' },
+        { arrivalTime:  60, posX: 446, speed: 2.5, type: 'strafing' },
+        { arrivalTime: 120, posX: 298, speed: 2,   type: 'shooting' },
+        { arrivalTime: 180, posX: 150, speed: 2,   type: 'regular'  },
+        { arrivalTime: 230, posX: 446, speed: 2,   type: 'regular'  },
+        { arrivalTime: 290, posX: 298, speed: 2.5, type: 'strafing' },
+        { arrivalTime: 350, posX: 200, speed: 2,   type: 'shooting' },
+      ],
+      powerups: [
+        { arrivalTime:  50, posX: 496, type: 'engine' },
+        { arrivalTime: 250, posX: 100, type: 'life'   },
+      ],
+    },
+    // Wave 4 — all types, maximum difficulty
+    {
+      enemies: [
+        { arrivalTime:   0, posX: 100, speed: 3,   type: 'shooting' },
+        { arrivalTime:   0, posX: 496, speed: 3,   type: 'shooting' },
+        { arrivalTime:  60, posX: 200, speed: 3,   type: 'strafing' },
+        { arrivalTime:  60, posX: 396, speed: 3,   type: 'strafing' },
+        { arrivalTime: 120, posX: 298, speed: 2.5, type: 'shooting' },
+        { arrivalTime: 180, posX: 150, speed: 3,   type: 'regular'  },
+        { arrivalTime: 180, posX: 446, speed: 3,   type: 'regular'  },
+        { arrivalTime: 240, posX: 298, speed: 3,   type: 'strafing' },
+        { arrivalTime: 300, posX: 100, speed: 3,   type: 'shooting' },
+        { arrivalTime: 300, posX: 496, speed: 3,   type: 'shooting' },
+      ],
+      powerups: [
+        { arrivalTime: 100, posX: 298, type: 'shield'   },
+        { arrivalTime: 360, posX: 150, type: 'cooldown' },
+      ],
+    },
+  ],
+};
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // PROJECTILE  (player bullet)
-  // ═══════════════════════════════════════════════════════════════════════════
-  class Projectile {
-    constructor(scene, x, y, speed) {
-      this.scene = scene;
-      this.speed = speed;
-      // Phaser.GameObjects.Image — origin defaults to centre (0.5, 0.5)
-      this.go = scene.add.image(x, y, 'playerProjectile');
+// ═══════════════════════════════════════════════════════════════════════════
+// HELPERS
+// ═══════════════════════════════════════════════════════════════════════════
+
+function overlaps(a, b) {
+  return Phaser.Geom.Rectangle.Overlaps(a, b);
+}
+
+function centredBounds(go) {
+  return new Phaser.Geom.Rectangle(
+    go.x - go.width  / 2,
+    go.y - go.height / 2,
+    go.width, go.height
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SCORE MANAGER  (mirrors ScoreManager.java + ScoreObserver pattern)
+// ═══════════════════════════════════════════════════════════════════════════
+class ScoreManager {
+  constructor() { this.score = 0; }
+  add(v)     { this.score += v; }
+  deduct(v)  { this.score = Math.max(0, this.score - v); }
+  getScore() { return this.score; }
+  reset()    { this.score = 0; }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PROJECTILE  (player bullet — moves upward)
+// ═══════════════════════════════════════════════════════════════════════════
+class Projectile {
+  constructor(scene, x, y) {
+    this.speed = CFG.projectile.speed;
+    this.go    = scene.add.image(x, y, 'playerProjectile').setDepth(2);
+  }
+  update(ts)    { this.go.y -= this.speed * ts; }
+  isOffScreen() { return this.go.y + this.go.height / 2 < 0; }
+  getBounds()   { return centredBounds(this.go); }
+  destroy()     { this.go.destroy(); }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ENEMY PROJECTILE  (moves downward)
+// ═══════════════════════════════════════════════════════════════════════════
+class EnemyProjectile {
+  constructor(scene, x, y) {
+    this.speed = CFG.enemyProjectile.speed;
+    this.go    = scene.add.image(x, y, 'enemyProjectile').setDepth(2);
+  }
+  update(ts)    { this.go.y += this.speed * ts; }
+  isOffScreen() { return this.go.y - this.go.height / 2 > H; }
+  getBounds()   { return centredBounds(this.go); }
+  destroy()     { this.go.destroy(); }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// EXPLOSION  (timed sprite, no physics — mirrors Explosion.java)
+// ═══════════════════════════════════════════════════════════════════════════
+class Explosion {
+  constructor(scene, x, y, textureKey, duration) {
+    this.go       = scene.add.image(x, y, textureKey).setDepth(3);
+    this.duration = duration;
+    this.elapsed  = 0;
+  }
+  update(ts)    { this.elapsed += ts; }
+  isFinished()  { return this.elapsed >= this.duration; }
+  destroy()     { this.go.destroy(); }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// POWERUPS  (mirrors Powerup.java + subclasses)
+// ═══════════════════════════════════════════════════════════════════════════
+class Powerup {
+  constructor(scene, x, textureKey, speed) {
+    this.speed = speed;
+    this.go    = scene.add.image(x, -30, textureKey).setDepth(1);
+  }
+  update(ts)      { this.go.y += this.speed * ts; }
+  isOffScreen()   { return this.go.y - this.go.height / 2 > H; }
+  getBounds()     { return centredBounds(this.go); }
+  activate(_p)    {}
+  destroy()       { this.go.destroy(); }
+}
+
+class ShieldPowerup extends Powerup {
+  constructor(scene, x) { super(scene, x, 'shieldPowerup', CFG.powerup.shield.speed); }
+  activate(p) { p.applyShield(CFG.powerup.shield.duration); }
+}
+class LifePowerup extends Powerup {
+  constructor(scene, x) { super(scene, x, 'lifePowerup', CFG.powerup.life.speed); }
+  activate(p) { p.addLife(); }
+}
+class CooldownPowerup extends Powerup {
+  constructor(scene, x) { super(scene, x, 'cooldownPowerup', CFG.powerup.cooldown.speed); }
+  activate(p) { p.applyCooldown(CFG.powerup.cooldown.duration); }
+}
+class EnginePowerup extends Powerup {
+  constructor(scene, x) { super(scene, x, 'enginePowerup', CFG.powerup.engine.speed); }
+  activate(p) { p.applyEngine(CFG.powerup.engine.duration); }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ENEMIES  (mirrors Enemy.java hierarchy + MovementStrategy pattern)
+// ═══════════════════════════════════════════════════════════════════════════
+class Enemy {
+  constructor(scene, x, textureKey, speed) {
+    this.speed = speed;
+    this.go    = scene.add.image(x, -30, textureKey).setDepth(1);
+  }
+  update(_ts)   {}
+  isOffScreen() { return this.go.y - this.go.height / 2 > H; }
+  getBounds()   { return centredBounds(this.go); }
+  getPos()      { return { x: this.go.x, y: this.go.y }; }
+  destroy()     { this.go.destroy(); }
+}
+
+// Moves straight down — RegularMovementStrategy
+class RegularEnemy extends Enemy {
+  constructor(scene, x, speed) { super(scene, x, 'regularEnemy', speed); }
+  update(ts) { this.go.y += this.speed * ts; }
+}
+
+// Moves down + bounces horizontally — StrafingMovementStrategy
+class StrafingEnemy extends Enemy {
+  constructor(scene, x, speed) {
+    super(scene, x, 'strafingEnemy', speed);
+    this.dirX   = Math.random() < 0.5 ? 1 : -1;
+    this.hSpeed = speed * 0.9;
+  }
+  update(ts) {
+    this.go.y += this.speed * ts;
+    this.go.x += this.hSpeed * this.dirX * ts;
+    const hw = this.go.width / 2;
+    if (this.go.x - hw <= 0) { this.go.x = hw;     this.dirX =  1; }
+    if (this.go.x + hw >= W) { this.go.x = W - hw; this.dirX = -1; }
+  }
+}
+
+// Moves straight down + fires at configurable rate — EnemyShooting.java
+class ShootingEnemy extends Enemy {
+  constructor(scene, x, speed) {
+    super(scene, x, 'shootingEnemy', speed);
+    this.firingRate      = CFG.enemy.shooting.firingRate;
+    this.framesSinceShot = Math.random() * this.firingRate; // stagger initial shots
+  }
+  update(ts) {
+    this.go.y           += this.speed * ts;
+    this.framesSinceShot += ts;
+  }
+  tryShoot(scene) {
+    if (this.framesSinceShot < this.firingRate) return null;
+    this.framesSinceShot = 0;
+    return new EnemyProjectile(scene, this.go.x, this.go.y + this.go.height / 2);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// WAVE MANAGER  (mirrors WaveManager.java)
+// Reads wave schedules from CFG.waves (equivalent to reading .properties).
+// Spawn logic: waveFrameCount accumulates timescale each frame; any entry
+// whose arrivalTime <= waveFrameCount is spawned and removed from schedule.
+// ═══════════════════════════════════════════════════════════════════════════
+class WaveManager {
+  constructor() {
+    this.currentWaveIdx = 0;
+    this._loadWave(0);
+  }
+
+  _loadWave(idx) {
+    const wave            = CFG.waves[idx];
+    this.enemySchedule    = wave.enemies.map(e => ({ ...e }));
+    this.powerupSchedule  = (wave.powerups || []).map(p => ({ ...p }));
+    this.waveFrameCount   = 0;
+  }
+
+  update(scene, ts, enemies, powerups) {
+    this.waveFrameCount += ts;
+
+    for (let i = this.enemySchedule.length - 1; i >= 0; i--) {
+      if (this.waveFrameCount >= this.enemySchedule[i].arrivalTime) {
+        enemies.push(this._spawnEnemy(scene, this.enemySchedule[i]));
+        this.enemySchedule.splice(i, 1);
+      }
+    }
+    for (let i = this.powerupSchedule.length - 1; i >= 0; i--) {
+      if (this.waveFrameCount >= this.powerupSchedule[i].arrivalTime) {
+        powerups.push(this._spawnPowerup(scene, this.powerupSchedule[i]));
+        this.powerupSchedule.splice(i, 1);
+      }
+    }
+  }
+
+  _spawnEnemy(scene, s) {
+    switch (s.type) {
+      case 'regular':  return new RegularEnemy(scene, s.posX, s.speed);
+      case 'strafing': return new StrafingEnemy(scene, s.posX, s.speed);
+      case 'shooting': return new ShootingEnemy(scene, s.posX, s.speed);
+    }
+  }
+
+  _spawnPowerup(scene, s) {
+    switch (s.type) {
+      case 'shield':   return new ShieldPowerup(scene, s.posX);
+      case 'life':     return new LifePowerup(scene, s.posX);
+      case 'cooldown': return new CooldownPowerup(scene, s.posX);
+      case 'engine':   return new EnginePowerup(scene, s.posX);
+    }
+  }
+
+  // All schedules empty AND no live entities remain — matches Java exactly
+  isWaveComplete(enemies, enemyProjectiles, powerups) {
+    return this.enemySchedule.length   === 0
+        && this.powerupSchedule.length === 0
+        && enemies.length              === 0
+        && enemyProjectiles.length     === 0
+        && powerups.length             === 0;
+  }
+
+  nextWave()           { this.currentWaveIdx++; this._loadWave(this.currentWaveIdx); }
+  isAllWavesComplete() { return this.currentWaveIdx >= CFG.waves.length; }
+  getCurrentWave()     { return this.currentWaveIdx + 1; } // 1-indexed for display
+
+  reset() { this.currentWaveIdx = 0; this._loadWave(0); }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PLAYER SHIP  (mirrors PlayerShip.java)
+// ═══════════════════════════════════════════════════════════════════════════
+class PlayerShip {
+  constructor(scene, x, y, cfg) {
+    this.scene            = scene;
+    this.baseSpeed        = cfg.speed;
+    this.initialLives     = cfg.initialLives;
+    this.currentLives     = cfg.initialLives;
+    this.baseShootCooldown    = cfg.shootCooldown;
+    this.hitInvincibilityTime = cfg.hitInvincibilityTime;
+    this._initialX        = x;
+    this._initialY        = y;
+
+    this.invincibleTimer    = 0;
+    this.isShielded         = false;
+    this.speedMultiplier    = 1.0;
+    this.speedTimer         = 0;
+    this.cooldownMultiplier = 1.0;
+    this.cooldownTimer      = 0;
+
+    this.go       = scene.add.image(x, y, 'player').setDepth(2);
+    this.shieldGo = scene.add.image(x, y, 'invincible').setDepth(3).setVisible(false);
+  }
+
+  // Called every battle/end frame — movement + timer tick, no shooting
+  update(keys, ts) {
+    this._tickTimers(ts);
+    this._move(keys, ts);
+    this._syncVisual();
+  }
+
+  _tickTimers(ts) {
+    if (this.invincibleTimer > 0) {
+      this.invincibleTimer -= ts;
+      if (this.invincibleTimer <= 0) this.isShielded = false;
+    }
+    if (this.speedTimer > 0) {
+      this.speedTimer -= ts;
+      if (this.speedTimer <= 0) this.speedMultiplier = 1.0;
+    }
+    if (this.cooldownTimer > 0) {
+      this.cooldownTimer -= ts;
+      if (this.cooldownTimer <= 0) this.cooldownMultiplier = 1.0;
+    }
+  }
+
+  _move(keys, ts) {
+    const halfW = this.go.width / 2;
+    const dist  = this.baseSpeed * this.speedMultiplier * ts;
+    let x = this.go.x;
+    if (keys.A.isDown) x = Math.max(halfW, x - dist);
+    if (keys.D.isDown) x = Math.min(W - halfW, x + dist);
+    this.go.x = this.shieldGo.x = x;
+  }
+
+  _syncVisual() {
+    this.shieldGo.setVisible(this.isInvincible());
+    // Flash body during hit-stun (not during shield powerup)
+    const flash = this.invincibleTimer > 0 && !this.isShielded;
+    this.go.setAlpha(flash ? (Math.floor(this.invincibleTimer / 6) % 2 === 0 ? 0.3 : 1) : 1);
+  }
+
+  setVisible(v) {
+    this.go.setVisible(v);
+    if (!v) this.shieldGo.setVisible(false);
+  }
+
+  // ── Invincibility ──────────────────────────────────────────────────────
+  isInvincible()          { return this.invincibleTimer > 0 || this.isShielded; }
+  applyHitInvincibility() { this.invincibleTimer = this.hitInvincibilityTime; }
+  applyShield(d)          { this.isShielded = true; this.invincibleTimer = d; }
+
+  // ── Powerup effects ────────────────────────────────────────────────────
+  applyEngine(d)   { this.speedMultiplier = 2.0;       this.speedTimer    = d; }
+  applyCooldown(d) { this.cooldownMultiplier = 1.0/3.0; this.cooldownTimer = d; }
+  addLife()        { if (this.currentLives < this.initialLives) this.currentLives++; }
+
+  // ── Lives ──────────────────────────────────────────────────────────────
+  decreaseLife() { this.currentLives--; }
+  getLives()     { return this.currentLives; }
+
+  // ── Cooldown (affected by cooldown powerup) ────────────────────────────
+  getShootCooldown() {
+    return Math.max(1, Math.floor(this.baseShootCooldown * this.cooldownMultiplier));
+  }
+
+  getBounds() { return centredBounds(this.go); }
+
+  reset() {
+    this.go.x = this.shieldGo.x = this._initialX;
+    this.go.y = this.shieldGo.y = this._initialY;
+    this.currentLives       = this.initialLives;
+    this.invincibleTimer    = 0; this.isShielded         = false;
+    this.speedMultiplier    = 1.0; this.speedTimer         = 0;
+    this.cooldownMultiplier = 1.0; this.cooldownTimer      = 0;
+    this.go.setAlpha(1); this.shieldGo.setVisible(false);
+    this.go.setVisible(true);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// BOOT SCENE
+// ═══════════════════════════════════════════════════════════════════════════
+class BootScene extends Phaser.Scene {
+  constructor() { super({ key: 'BootScene' }); }
+
+  preload() {
+    this.load.image('player',           'res/playerSpaceship.png');
+    this.load.image('invincible',       'res/invincible.png');
+    this.load.image('playerLife',       'res/playerLife.png');
+    this.load.image('playerProjectile', 'res/playerProjectile.png');
+    this.load.image('enemyProjectile',  'res/enemyProjectile.png');
+    this.load.image('regularEnemy',     'res/regularEnemy.png');
+    this.load.image('strafingEnemy',    'res/strafingEnemy.png');
+    this.load.image('shootingEnemy',    'res/shootingEnemy.png');
+    this.load.image('shieldPowerup',    'res/shieldPowerup.png');
+    this.load.image('lifePowerup',      'res/lifePowerup.png');
+    this.load.image('cooldownPowerup',  'res/cooldownPowerup.png');
+    this.load.image('enginePowerup',    'res/enginePowerup.png');
+    this.load.image('explosionLarge',   'res/explosionLarge.png');
+    this.load.image('explosionSmall',   'res/explosionSmall.png');
+  }
+
+  create() { this.scene.start('GameScene'); }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// GAME SCENE  (mirrors ShadowAliens.java — main game loop + state machine)
+// ═══════════════════════════════════════════════════════════════════════════
+class GameScene extends Phaser.Scene {
+  constructor() { super({ key: 'GameScene' }); }
+
+  create() {
+    this.keys = this.input.keyboard.addKeys({
+      A: Phaser.Input.Keyboard.KeyCodes.A,
+      D: Phaser.Input.Keyboard.KeyCodes.D,
+      SPACE: Phaser.Input.Keyboard.KeyCodes.SPACE,
+      ESC:   Phaser.Input.Keyboard.KeyCodes.ESC,
+      R:     Phaser.Input.Keyboard.KeyCodes.R,
+      F:     Phaser.Input.Keyboard.KeyCodes.F,
+      G:     Phaser.Input.Keyboard.KeyCodes.G,
+    });
+
+    this._initEntities();
+    this._buildScreens();
+    this.scene.launch('UIScene');
+  }
+
+  // ── Initialise all game state ─────────────────────────────────────────
+
+  _initEntities() {
+    this.player           = new PlayerShip(this, W / 2, CFG.player.posY, CFG.player);
+    this.projectiles      = [];
+    this.enemies          = [];
+    this.enemyProjectiles = [];
+    this.explosions       = [];
+    this.powerups         = [];
+
+    this.scoreManager   = new ScoreManager();
+    this.waveManager    = new WaveManager();
+
+    this.gameState          = 'START';
+    this.isWin              = false;
+    this.timescale          = 1.0;
+    this.timescaleLevel     = 1;
+    this.frameSinceLastShot = 0;
+
+    this.player.setVisible(false); // hidden until BATTLE
+  }
+
+  // ── Screen overlays ───────────────────────────────────────────────────
+
+  _buildScreens() {
+    const cx = W / 2;
+    const T  = s => ({ fontFamily: 'monospace', fontSize: s, fill: '#ffffff', align: 'center' });
+
+    // START
+    this.startScreen = this.add.container(0, 0, [
+      this.add.text(cx, 320, 'SHADOW ALIEN',         T('40px')).setOrigin(0.5),
+      this.add.text(cx, 400, 'A / D  —  Move',       T('20px')).setOrigin(0.5),
+      this.add.text(cx, 430, 'SPACE  —  Shoot',      T('20px')).setOrigin(0.5),
+      this.add.text(cx, 460, 'ESC    —  Pause',      T('20px')).setOrigin(0.5),
+      this.add.text(cx, 490, 'F / G  —  Slow / Fast',T('20px')).setOrigin(0.5),
+      this.add.text(cx, 550, 'Press SPACE to Start', T('26px')).setOrigin(0.5),
+    ]).setDepth(20);
+
+    // PAUSE
+    this._pauseBg    = this.add.rectangle(cx, H / 2, W, H, 0x000000, 0.55).setDepth(19);
+    this._pauseTitle = this.add.text(cx, H / 2 - 60, 'PAUSED',           T('44px')).setOrigin(0.5).setDepth(20);
+    this._pauseHints = this.add.text(cx, H / 2 + 10,
+      'ESC — Resume\nR — Restart\nF / G — Adjust speed',
+      { ...T('20px'), lineSpacing: 8 }).setOrigin(0.5).setDepth(20);
+    this._pauseSpeed = this.add.text(cx, H / 2 + 120, '', T('18px')).setOrigin(0.5).setDepth(20);
+    this.pauseScreen = [this._pauseBg, this._pauseTitle, this._pauseHints, this._pauseSpeed];
+
+    // END
+    this._endTitle = this.add.text(cx, 340, '',                      T('52px')).setOrigin(0.5).setDepth(20);
+    this._endScore = this.add.text(cx, 420, '',                      T('26px')).setOrigin(0.5).setDepth(20);
+    this._endHint  = this.add.text(cx, 490, 'Press SPACE to Replay', T('22px')).setOrigin(0.5).setDepth(20);
+    this.endScreen = [this._endTitle, this._endScore, this._endHint];
+
+    this._showScreen('START');
+  }
+
+  _showScreen(name) {
+    this.startScreen.setVisible(name === 'START');
+    this.pauseScreen.forEach(o => o.setVisible(name === 'PAUSE'));
+    this.endScreen.forEach(o   => o.setVisible(name === 'END'));
+  }
+
+  // ── Main update — dispatches on gameState ─────────────────────────────
+
+  update() {
+    switch (this.gameState) {
+      case 'START':  this._handleStart();  break;
+      case 'BATTLE': this._handleBattle(); break;
+      case 'PAUSE':  this._handlePause();  break;
+      case 'END':    this._handleEnd();    break;
+    }
+  }
+
+  // ── State: START ─────────────────────────────────────────────────────
+  // Mirrors handleStartState(input): shows start screen, SPACE → BATTLE.
+
+  _handleStart() {
+    if (Phaser.Input.Keyboard.JustDown(this.keys.SPACE)) {
+      this.player.setVisible(true);
+      this.gameState = 'BATTLE';
+      this._showScreen('BATTLE');
+    }
+  }
+
+  // ── State: BATTLE ────────────────────────────────────────────────────
+  // Mirrors handleBattleState(input): full simulation tick each frame.
+
+  _handleBattle() {
+    if (Phaser.Input.Keyboard.JustDown(this.keys.R))   { this._resetGame(); return; }
+    if (Phaser.Input.Keyboard.JustDown(this.keys.ESC)) {
+      this._pauseSpeed.setText(`Speed level: ${this.timescaleLevel}`);
+      this.gameState = 'PAUSE';
+      this._showScreen('PAUSE');
+      return;
     }
 
-    update(timescale) {
-      this.go.y -= this.speed * timescale;
-    }
+    this._tickTimescale();
 
-    isOffScreen() {
-      return this.go.y + this.go.height / 2 < 0;
-    }
+    this.player.update(this.keys, this.timescale);
+    this._handleShooting();
 
-    destroy() {
-      this.go.destroy();
-    }
+    this.waveManager.update(this, this.timescale, this.enemies, this.powerups);
+    this._updateEntities();
+    this._checkCollisions();
+    this._cleanUp();
 
-    getBounds() {
-      return new Phaser.Geom.Rectangle(
-        this.go.x - this.go.width  / 2,
-        this.go.y - this.go.height / 2,
-        this.go.width,
-        this.go.height
+    // Win / loss check — mirrors the if-else at end of handleBattleState
+    if (this.player.getLives() <= 0) {
+      this.isWin = false;
+      this._enterEnd();
+    } else if (this.waveManager.isWaveComplete(this.enemies, this.enemyProjectiles, this.powerups)) {
+      if (this.waveManager.isAllWavesComplete()) {
+        this.isWin = true;
+        this._enterEnd();
+      } else {
+        this.scoreManager.add(CFG.score.waveCompleted);
+        this.waveManager.nextWave();
+      }
+    }
+  }
+
+  // ── State: PAUSE ─────────────────────────────────────────────────────
+  // Mirrors handlePauseState(input): battle frozen behind overlay.
+  // renderBattle() is implicitly active (Phaser renders display list always).
+
+  _handlePause() {
+    this._tickTimescale();
+    this._pauseSpeed.setText(`Speed level: ${this.timescaleLevel}`);
+
+    if (Phaser.Input.Keyboard.JustDown(this.keys.ESC)) {
+      this.gameState = 'BATTLE';
+      this._showScreen('BATTLE');
+    }
+    if (Phaser.Input.Keyboard.JustDown(this.keys.R)) { this._resetGame(); }
+  }
+
+  // ── State: END ───────────────────────────────────────────────────────
+  // Mirrors handleEndState(input): player moves, SPACE restarts.
+  // Shooting is intentionally absent (SPACE is consumed by restart).
+
+  _handleEnd() {
+    this.player.update(this.keys, this.timescale);
+    if (Phaser.Input.Keyboard.JustDown(this.keys.SPACE)) this._resetGame();
+  }
+
+  // ── Timescale (F / G developer mode — mirrors handleTimescaleInput) ──
+
+  _tickTimescale() {
+    if (Phaser.Input.Keyboard.JustDown(this.keys.G)) this.timescaleLevel++;
+    if (Phaser.Input.Keyboard.JustDown(this.keys.F)) this.timescaleLevel--;
+    this.timescale = this.timescaleLevel >= 1
+      ? this.timescaleLevel
+      : 1.0 / Math.abs(this.timescaleLevel);
+  }
+
+  // ── Shooting (frameSinceLastShot lives in GameScene, not PlayerShip) ─
+
+  _handleShooting() {
+    this.frameSinceLastShot += this.timescale;
+    if (Phaser.Input.Keyboard.JustDown(this.keys.SPACE)
+        && this.frameSinceLastShot >= this.player.getShootCooldown()) {
+      this.frameSinceLastShot = 0;
+      this.projectiles.push(
+        new Projectile(this, this.player.go.x, this.player.go.y - this.player.go.height / 2 - 4)
       );
     }
   }
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // PLAYER SHIP
-  // ═══════════════════════════════════════════════════════════════════════════
-  class PlayerShip {
-    constructor(scene, x, y, cfg) {
-      this.scene = scene;
+  // ── Update entities (mirrors updateEntities()) ───────────────────────
 
-      this.baseSpeed             = cfg.speed;
-      this.initialLives          = cfg.initialLives;
-      this.currentLives          = cfg.initialLives;
-      this.baseShootCooldown     = cfg.shootCooldown;
-      this.hitInvincibilityTime  = cfg.hitInvincibilityTime;
-      this.screenW               = GAME_DATA.window.width;
+  _updateEntities() {
+    const ts = this.timescale;
+    for (const p  of this.projectiles)      p.update(ts);
+    for (const ep of this.enemyProjectiles) ep.update(ts);
+    for (const ex of this.explosions)       ex.update(ts);
+    for (const pu of this.powerups)         pu.update(ts);
 
-      this.invincibleTimer    = 0;
-      this.isShielded         = false;
-      this.speedMultiplier    = 1.0;
-      this.speedTimer         = 0;
-      this.cooldownMultiplier = 1.0;
-      this.cooldownTimer      = 0;
-      this.frameSinceLastShot = 0;
-
-      // Ship sprite — origin centre, matching Bagel's draw(x, y) convention
-      this.go = scene.add.image(x, y, 'player');
-
-      // Shield overlay — rendered on top of ship when invincible
-      this.shieldGo = scene.add.image(x, y, 'invincible');
-      this.shieldGo.setVisible(false);
-    }
-
-    update(keys, timescale) {
-      this._tickTimers(timescale);
-      this._move(keys, timescale);
-      this._syncShieldVisual();
-      return this._handleShooting(keys, timescale);
-    }
-
-    _tickTimers(timescale) {
-      if (this.invincibleTimer > 0) {
-        this.invincibleTimer -= timescale;
-        if (this.invincibleTimer <= 0) this.isShielded = false;
+    for (const e of this.enemies) {
+      e.update(ts);
+      if (e instanceof ShootingEnemy) {
+        const shot = e.tryShoot(this);
+        if (shot) this.enemyProjectiles.push(shot);
       }
-      if (this.speedTimer > 0) {
-        this.speedTimer -= timescale;
-        if (this.speedTimer <= 0) this.speedMultiplier = 1.0;
-      }
-      if (this.cooldownTimer > 0) {
-        this.cooldownTimer -= timescale;
-        if (this.cooldownTimer <= 0) this.cooldownMultiplier = 1.0;
-      }
-    }
-
-    _move(keys, timescale) {
-      const halfW = this.go.width / 2;
-      const dist  = this.baseSpeed * this.speedMultiplier * timescale;
-      let   x     = this.go.x;
-
-      if (keys.A.isDown) x = Math.max(halfW, x - dist);
-      if (keys.D.isDown) x = Math.min(this.screenW - halfW, x + dist);
-
-      this.go.x       = x;
-      this.shieldGo.x = x;
-    }
-
-    _syncShieldVisual() {
-      this.shieldGo.setVisible(this.isInvincible());
-      // Flash ship body during hit-stun only (not during shield powerup)
-      const flash = this.invincibleTimer > 0 && !this.isShielded;
-      this.go.setAlpha(flash ? (Math.floor(this.invincibleTimer / 6) % 2 === 0 ? 0.3 : 1) : 1);
-    }
-
-    _handleShooting(keys, timescale) {
-      this.frameSinceLastShot += timescale;
-      if (Phaser.Input.Keyboard.JustDown(keys.SPACE) &&
-          this.frameSinceLastShot >= this.getShootCooldown()) {
-        this.frameSinceLastShot = 0;
-        return new Projectile(
-          this.scene,
-          this.go.x,
-          this.go.y - this.go.height / 2 - 4,
-          GAME_DATA.projectile.speed
-        );
-      }
-      return null;
-    }
-
-    isInvincible()          { return this.invincibleTimer > 0 || this.isShielded; }
-    applyHitInvincibility() { this.invincibleTimer = this.hitInvincibilityTime; }
-    applyShield(d)          { this.isShielded = true; this.invincibleTimer = d; }
-    applyEngine(d)          { this.speedMultiplier = 2.0; this.speedTimer = d; }
-    applyCooldown(d)        { this.cooldownMultiplier = 1.0 / 3.0; this.cooldownTimer = d; }
-    addLife()               { if (this.currentLives < this.initialLives) this.currentLives++; }
-    decreaseLife()          { this.currentLives--; }
-    getLives()              { return this.currentLives; }
-    getShootCooldown()      { return Math.max(1, Math.floor(this.baseShootCooldown * this.cooldownMultiplier)); }
-    getX()                  { return this.go.x; }
-    getY()                  { return this.go.y; }
-
-    getBounds() {
-      return new Phaser.Geom.Rectangle(
-        this.go.x - this.go.width  / 2,
-        this.go.y - this.go.height / 2,
-        this.go.width,
-        this.go.height
-      );
-    }
-
-    reset(x, y) {
-      this.go.x = x;       this.go.y = y;
-      this.shieldGo.x = x; this.shieldGo.y = y;
-      this.currentLives       = this.initialLives;
-      this.invincibleTimer    = 0;  this.isShielded         = false;
-      this.speedMultiplier    = 1.0; this.speedTimer         = 0;
-      this.cooldownMultiplier = 1.0; this.cooldownTimer      = 0;
-      this.frameSinceLastShot = 0;
-      this.go.setAlpha(1); this.shieldGo.setVisible(false);
-    }
-
-    destroy() { this.go.destroy(); this.shieldGo.destroy(); }
-  }
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // BOOT SCENE  — loads all assets before GameScene starts
-  // ═══════════════════════════════════════════════════════════════════════════
-  class BootScene extends Phaser.Scene {
-    constructor() { super({ key: 'BootScene' }); }
-
-    preload() {
-      // Player
-      this.load.image('player',       'res/playerSpaceship.png');
-      this.load.image('invincible',   'res/invincible.png');
-      this.load.image('playerLife',   'res/playerLife.png');
-
-      // Projectiles
-      this.load.image('playerProjectile', 'res/playerProjectile.png');
-      this.load.image('enemyProjectile',  'res/enemyProjectile.png');
-
-      // Enemies
-      this.load.image('regularEnemy',  'res/regularEnemy.png');
-      this.load.image('strafingEnemy', 'res/strafingEnemy.png');
-      this.load.image('shootingEnemy', 'res/shootingEnemy.png');
-
-      // Powerups
-      this.load.image('shieldPowerup',   'res/shieldPowerup.png');
-      this.load.image('lifePowerup',     'res/lifePowerup.png');
-      this.load.image('cooldownPowerup', 'res/cooldownPowerup.png');
-      this.load.image('enginePowerup',   'res/enginePowerup.png');
-
-      // Explosions
-      this.load.image('explosionLarge', 'res/explosionLarge.png');
-      this.load.image('explosionSmall', 'res/explosionSmall.png');
-    }
-
-    // Phaser only calls create() once preload() is fully complete
-    create() {
-      this.scene.start('GameScene');
     }
   }
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // GAME SCENE
-  // ═══════════════════════════════════════════════════════════════════════════
-  class GameScene extends Phaser.Scene {
-    constructor() { super({ key: 'GameScene' }); }
+  // ── Collisions (mirrors checkCollisions() exactly) ───────────────────
 
-    create() {
-      const cfg    = GAME_DATA.player;
-      const startX = GAME_DATA.window.width / 2;
+  _checkCollisions() {
+    const sc        = CFG.score;
+    const ex        = CFG.explosion;
+    const playerBounds = this.player.getBounds();
 
-      this.keys = this.input.keyboard.addKeys({
-        A:     Phaser.Input.Keyboard.KeyCodes.A,
-        D:     Phaser.Input.Keyboard.KeyCodes.D,
-        SPACE: Phaser.Input.Keyboard.KeyCodes.SPACE,
-        ESC:   Phaser.Input.Keyboard.KeyCodes.ESC,
-        R:     Phaser.Input.Keyboard.KeyCodes.R,
-        F:     Phaser.Input.Keyboard.KeyCodes.F,
-        G:     Phaser.Input.Keyboard.KeyCodes.G,
-      });
+    // 1. Player projectiles vs enemies, then vs enemy projectiles
+    for (let i = this.projectiles.length - 1; i >= 0; i--) {
+      const pb  = this.projectiles[i].getBounds();
+      let   hit = false;
 
-      this.player      = new PlayerShip(this, startX, cfg.posY, cfg);
-      this.projectiles = [];
-      this.timescale      = 1.0;
-      this.timescaleLevel = 1;
+      for (let j = this.enemies.length - 1; j >= 0; j--) {
+        if (!overlaps(pb, this.enemies[j].getBounds())) continue;
 
-      this.debugText = this.add.text(8, 8, '', {
-        fontSize: '13px', fill: '#ffffff', fontFamily: 'monospace',
-      }).setDepth(10);
+        const e = this.enemies[j];
+        this.explosions.push(new Explosion(this, e.go.x, e.go.y, 'explosionLarge', ex.large.duration));
 
-      this.scene.launch('UIScene');
-    }
+        if      (e instanceof ShootingEnemy) this.scoreManager.add(sc.shooting);
+        else if (e instanceof StrafingEnemy) this.scoreManager.add(sc.strafing);
+        else                                 this.scoreManager.add(sc.regular);
 
-    update() {
-      if (Phaser.Input.Keyboard.JustDown(this.keys.G)) this.timescaleLevel++;
-      if (Phaser.Input.Keyboard.JustDown(this.keys.F)) this.timescaleLevel--;
-      this.timescale = this.timescaleLevel >= 1
-        ? this.timescaleLevel
-        : 1.0 / Math.abs(this.timescaleLevel);
+        e.destroy(); this.enemies.splice(j, 1);
+        hit = true; break;
+      }
 
-      const shot = this.player.update(this.keys, this.timescale);
-      if (shot) this.projectiles.push(shot);
-
-      for (let i = this.projectiles.length - 1; i >= 0; i--) {
-        this.projectiles[i].update(this.timescale);
-        if (this.projectiles[i].isOffScreen()) {
-          this.projectiles[i].destroy();
-          this.projectiles.splice(i, 1);
+      if (!hit) {
+        for (let k = this.enemyProjectiles.length - 1; k >= 0; k--) {
+          if (!overlaps(pb, this.enemyProjectiles[k].getBounds())) continue;
+          this.enemyProjectiles[k].destroy(); this.enemyProjectiles.splice(k, 1);
+          hit = true; break;
         }
       }
 
-      const p = this.player;
-      this.debugText.setText([
-        `Lives: ${p.getLives()}`,
-        `Invincible: ${p.isInvincible()}`,
-        `Cooldown: ${p.getShootCooldown()} frames`,
-        `Speed×: ${p.speedMultiplier.toFixed(1)}`,
-        `Timescale: ${this.timescale.toFixed(2)} (level ${this.timescaleLevel})`,
-        `Projectiles: ${this.projectiles.length}`,
-      ]);
+      if (hit) { this.projectiles[i].destroy(); this.projectiles.splice(i, 1); }
+    }
+
+    // 2. Enemies and enemy projectiles vs player (skipped when invincible)
+    if (!this.player.isInvincible()) {
+      for (let i = this.enemies.length - 1; i >= 0; i--) {
+        if (!overlaps(playerBounds, this.enemies[i].getBounds())) continue;
+        const e = this.enemies[i];
+        this.explosions.push(new Explosion(this, e.go.x, e.go.y, 'explosionSmall', ex.small.duration));
+        this.player.decreaseLife();
+        this.scoreManager.deduct(sc.gotHit);
+        this.player.applyHitInvincibility();
+        e.destroy(); this.enemies.splice(i, 1);
+      }
+
+      for (let i = this.enemyProjectiles.length - 1; i >= 0; i--) {
+        if (!overlaps(playerBounds, this.enemyProjectiles[i].getBounds())) continue;
+        this.player.decreaseLife();
+        this.scoreManager.deduct(sc.gotHit);
+        this.player.applyHitInvincibility();
+        this.enemyProjectiles[i].destroy(); this.enemyProjectiles.splice(i, 1);
+      }
+    }
+
+    // 3. Powerups vs player — always (no invincibility gate in Java either)
+    for (let i = this.powerups.length - 1; i >= 0; i--) {
+      if (!overlaps(playerBounds, this.powerups[i].getBounds())) continue;
+      this.powerups[i].activate(this.player);
+      this.powerups[i].destroy(); this.powerups.splice(i, 1);
     }
   }
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // UI SCENE
-  // ═══════════════════════════════════════════════════════════════════════════
-  class UIScene extends Phaser.Scene {
-    constructor() { super({ key: 'UIScene' }); }
-    create()  {}
-    update()  {}
+  // ── Clean up off-screen / finished objects (mirrors cleanUp()) ───────
+
+  _cleanUp() {
+    const sweep = arr => {
+      for (let i = arr.length - 1; i >= 0; i--) {
+        if (arr[i].isOffScreen()) { arr[i].destroy(); arr.splice(i, 1); }
+      }
+    };
+    sweep(this.projectiles);
+    sweep(this.enemies);
+    sweep(this.enemyProjectiles);
+    sweep(this.powerups);
+
+    for (let i = this.explosions.length - 1; i >= 0; i--) {
+      if (this.explosions[i].isFinished()) { this.explosions[i].destroy(); this.explosions.splice(i, 1); }
+    }
   }
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // PHASER CONFIG
-  // ═══════════════════════════════════════════════════════════════════════════
-  const config = {
-    type: Phaser.AUTO,
-    width:  GAME_DATA.window.width,
-    height: GAME_DATA.window.height,
-    backgroundColor: '#000000',
-    parent: 'game-container',
-    scene: [BootScene, GameScene, UIScene],
-    scale: {
-      mode:       Phaser.Scale.NONE,
-      autoCenter: Phaser.Scale.CENTER_BOTH,
-    },
-  };
+  // ── Transition helpers ────────────────────────────────────────────────
 
-  new Phaser.Game(config);
-  </script>
+  _enterEnd() {
+    // Hide non-player entities — Java's handleEndState doesn't call renderBattle()
+    [...this.enemies, ...this.enemyProjectiles, ...this.projectiles,
+     ...this.explosions, ...this.powerups].forEach(e => e.go.setVisible(false));
+
+    this.gameState = 'END';
+    this._endTitle.setText(this.isWin ? 'YOU WIN!' : 'GAME OVER');
+    this._endScore.setText(`Score: ${this.scoreManager.getScore()}`);
+    this._showScreen('END');
+  }
+
+  // ── Reset (mirrors resetGame()) ───────────────────────────────────────
+  // Clears all entities, resets all state, goes straight to BATTLE.
+
+  _resetGame() {
+    [...this.projectiles, ...this.enemies, ...this.enemyProjectiles,
+     ...this.explosions,  ...this.powerups].forEach(e => e.destroy());
+
+    this.projectiles      = [];
+    this.enemies          = [];
+    this.enemyProjectiles = [];
+    this.explosions       = [];
+    this.powerups         = [];
+
+    this.player.reset();
+    this.scoreManager.reset();
+    this.waveManager.reset();
+
+    this.timescale          = 1.0;
+    this.timescaleLevel     = 1;
+    this.frameSinceLastShot = 0;
+    this.isWin              = false;
+    this.gameState          = 'BATTLE';
+    this._showScreen('BATTLE');
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// UI SCENE  (mirrors renderUI() + renderLives() — runs as overlay)
+// Reads live state from GameScene each frame.
+// ═══════════════════════════════════════════════════════════════════════════
+class UIScene extends Phaser.Scene {
+  constructor() { super({ key: 'UIScene' }); }
+
+  create() {
+    const ui    = CFG.ui;
+    const style = { fontFamily: 'monospace', fontSize: '20px', fill: '#ffffff' };
+
+    // Pre-create all heart images; show/hide based on current lives
+    this.hearts = [];
+    for (let i = 0; i < CFG.player.initialLives; i++) {
+      this.hearts.push(
+        this.add.image(ui.lives.startX + i * ui.lives.gap, ui.lives.y, 'playerLife')
+          .setOrigin(0, 0.5)
+      );
+    }
+
+    this.scoreText     = this.add.text(ui.score.x,     ui.score.y,     '', style);
+    this.waveText      = this.add.text(ui.wave.x,      ui.wave.y,      '', style);
+    this.timescaleText = this.add.text(ui.timescale.x, ui.timescale.y, '', style);
+
+    this._setHUDVisible(false);
+  }
+
+  _setHUDVisible(v) {
+    this.hearts.forEach(h => h.setVisible(v));
+    this.scoreText.setVisible(v);
+    this.waveText.setVisible(v);
+    this.timescaleText.setVisible(v);
+  }
+
+  update() {
+    const gs = this.scene.get('GameScene');
+    if (!gs) return;
+
+    const active = gs.gameState === 'BATTLE' || gs.gameState === 'PAUSE';
+    this._setHUDVisible(active);
+    if (!active) return;
+
+    const lives = gs.player.getLives();
+    this.hearts.forEach((h, i) => h.setVisible(i < lives));
+
+    this.scoreText.setText(`Score:  ${gs.scoreManager.getScore()}`);
+    this.waveText.setText(`Wave:   ${gs.waveManager.getCurrentWave()} / ${CFG.waves.length}`);
+    this.timescaleText.setText(`Speed:  x${gs.timescale.toFixed(gs.timescale % 1 === 0 ? 0 : 2)}`);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PHASER CONFIG
+// ═══════════════════════════════════════════════════════════════════════════
+new Phaser.Game({
+  type:            Phaser.AUTO,
+  width:           W,
+  height:          H,
+  backgroundColor: '#000000',
+  parent:          'game-container',
+  scene:           [BootScene, GameScene, UIScene],
+  scale: {
+    mode:       Phaser.Scale.NONE,
+    autoCenter: Phaser.Scale.CENTER_BOTH,
+  },
+});
+</script>
 </body>
 </html>
