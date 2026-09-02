@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Shadow Alien</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #000;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      overflow: hidden;
+    }
+    canvas { display: block; }
+  </style>
+</head>
+<body>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/phaser/3.60.0/phaser.min.js"></script>
+  <script>
+    // ─── BootScene ────────────────────────────────────────────────────────────
+    class BootScene extends Phaser.Scene {
+      constructor() { super({ key: 'BootScene' }); }
+
+      preload() {
+        // Asset loading will go here in a future iteration.
+      }
+
+      create() {
+        this.scene.start('GameScene');
+      }
+    }
+
+    // ─── GameScene ────────────────────────────────────────────────────────────
+    class GameScene extends Phaser.Scene {
+      constructor() { super({ key: 'GameScene' }); }
+
+      create() {
+        // Game world logic will go here.
+        // Launch the UI overlay on top of this scene.
+        this.scene.launch('UIScene');
+      }
+
+      update(_time, _delta) {
+        // Per-frame game logic will go here.
+      }
+    }
+
+    // ─── UIScene ──────────────────────────────────────────────────────────────
+    class UIScene extends Phaser.Scene {
+      constructor() { super({ key: 'UIScene' }); }
+
+      create() {
+        // HUD elements will go here.
+      }
+
+      update(_time, _delta) {
+        // Per-frame UI updates will go here.
+      }
+    }
+
+    // ─── Game config ──────────────────────────────────────────────────────────
+    const config = {
+      type: Phaser.AUTO,
+      width: 596,
+      height: 842,
+      backgroundColor: '#000000',
+      scene: [BootScene, GameScene, UIScene],
+      parent: document.body,
+      scale: {
+        mode: Phaser.Scale.FIT,
+        autoCenter: Phaser.Scale.CENTER_BOTH,
+      },
+    };
+
+    const game = new Phaser.Game(config);
+  </script>
+</body>
+</html>
