@@ -49,7 +49,8 @@
     constructor(scene, x, y, speed) {
       this.scene = scene;
       this.speed = speed;
-      this.go = scene.add.rectangle(x, y, 4, 16, 0xffffff);
+      // Phaser.GameObjects.Image — origin defaults to centre (0.5, 0.5)
+      this.go = scene.add.image(x, y, 'playerProjectile');
     }
 
     update(timescale) {
@@ -57,7 +58,7 @@
     }
 
     isOffScreen() {
-      return this.go.y + 8 < 0;
+      return this.go.y + this.go.height / 2 < 0;
     }
 
     destroy() {
@@ -65,7 +66,12 @@
     }
 
     getBounds() {
-      return new Phaser.Geom.Rectangle(this.go.x - 2, this.go.y - 8, 4, 16);
+      return new Phaser.Geom.Rectangle(
+        this.go.x - this.go.width  / 2,
+        this.go.y - this.go.height / 2,
+        this.go.width,
+        this.go.height
+      );
     }
   }
 
@@ -91,10 +97,11 @@
       this.cooldownTimer      = 0;
       this.frameSinceLastShot = 0;
 
-      this.go = scene.add.rectangle(x, y, 40, 24, 0x4488ff);
+      // Ship sprite — origin centre, matching Bagel's draw(x, y) convention
+      this.go = scene.add.image(x, y, 'player');
 
-      this.shieldGo = scene.add.ellipse(x, y, 56, 56, 0x00ffff, 0);
-      this.shieldGo.setStrokeStyle(2, 0x00ffff);
+      // Shield overlay — rendered on top of ship when invincible
+      this.shieldGo = scene.add.image(x, y, 'invincible');
       this.shieldGo.setVisible(false);
     }
 
@@ -128,12 +135,13 @@
       if (keys.A.isDown) x = Math.max(halfW, x - dist);
       if (keys.D.isDown) x = Math.min(this.screenW - halfW, x + dist);
 
-      this.go.x = x;
+      this.go.x       = x;
       this.shieldGo.x = x;
     }
 
     _syncShieldVisual() {
       this.shieldGo.setVisible(this.isInvincible());
+      // Flash ship body during hit-stun only (not during shield powerup)
       const flash = this.invincibleTimer > 0 && !this.isShielded;
       this.go.setAlpha(flash ? (Math.floor(this.invincibleTimer / 6) % 2 === 0 ? 0.3 : 1) : 1);
     }
@@ -144,8 +152,9 @@
           this.frameSinceLastShot >= this.getShootCooldown()) {
         this.frameSinceLastShot = 0;
         return new Projectile(
-          this.scene, this.go.x,
-          this.go.y - this.go.height / 2 - 8,
+          this.scene,
+          this.go.x,
+          this.go.y - this.go.height / 2 - 4,
           GAME_DATA.projectile.speed
         );
       }
@@ -166,18 +175,20 @@
 
     getBounds() {
       return new Phaser.Geom.Rectangle(
-        this.go.x - this.go.width / 2, this.go.y - this.go.height / 2,
-        this.go.width, this.go.height
+        this.go.x - this.go.width  / 2,
+        this.go.y - this.go.height / 2,
+        this.go.width,
+        this.go.height
       );
     }
 
     reset(x, y) {
-      this.go.x = x; this.go.y = y;
+      this.go.x = x;       this.go.y = y;
       this.shieldGo.x = x; this.shieldGo.y = y;
-      this.currentLives = this.initialLives;
-      this.invincibleTimer = 0; this.isShielded = false;
-      this.speedMultiplier = 1.0; this.speedTimer = 0;
-      this.cooldownMultiplier = 1.0; this.cooldownTimer = 0;
+      this.currentLives       = this.initialLives;
+      this.invincibleTimer    = 0;  this.isShielded         = false;
+      this.speedMultiplier    = 1.0; this.speedTimer         = 0;
+      this.cooldownMultiplier = 1.0; this.cooldownTimer      = 0;
       this.frameSinceLastShot = 0;
       this.go.setAlpha(1); this.shieldGo.setVisible(false);
     }
@@ -186,14 +197,46 @@
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // SCENES
+  // BOOT SCENE  — loads all assets before GameScene starts
   // ═══════════════════════════════════════════════════════════════════════════
   class BootScene extends Phaser.Scene {
     constructor() { super({ key: 'BootScene' }); }
-    preload() {}
-    create()  { this.scene.start('GameScene'); }
+
+    preload() {
+      // Player
+      this.load.image('player',       'res/playerSpaceship.png');
+      this.load.image('invincible',   'res/invincible.png');
+      this.load.image('playerLife',   'res/playerLife.png');
+
+      // Projectiles
+      this.load.image('playerProjectile', 'res/playerProjectile.png');
+      this.load.image('enemyProjectile',  'res/enemyProjectile.png');
+
+      // Enemies
+      this.load.image('regularEnemy',  'res/regularEnemy.png');
+      this.load.image('strafingEnemy', 'res/strafingEnemy.png');
+      this.load.image('shootingEnemy', 'res/shootingEnemy.png');
+
+      // Powerups
+      this.load.image('shieldPowerup',   'res/shieldPowerup.png');
+      this.load.image('lifePowerup',     'res/lifePowerup.png');
+      this.load.image('cooldownPowerup', 'res/cooldownPowerup.png');
+      this.load.image('enginePowerup',   'res/enginePowerup.png');
+
+      // Explosions
+      this.load.image('explosionLarge', 'res/explosionLarge.png');
+      this.load.image('explosionSmall', 'res/explosionSmall.png');
+    }
+
+    // Phaser only calls create() once preload() is fully complete
+    create() {
+      this.scene.start('GameScene');
+    }
   }
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // GAME SCENE
+  // ═══════════════════════════════════════════════════════════════════════════
   class GameScene extends Phaser.Scene {
     constructor() { super({ key: 'GameScene' }); }
 
@@ -202,13 +245,13 @@
       const startX = GAME_DATA.window.width / 2;
 
       this.keys = this.input.keyboard.addKeys({
-        A: Phaser.Input.Keyboard.KeyCodes.A,
-        D: Phaser.Input.Keyboard.KeyCodes.D,
+        A:     Phaser.Input.Keyboard.KeyCodes.A,
+        D:     Phaser.Input.Keyboard.KeyCodes.D,
         SPACE: Phaser.Input.Keyboard.KeyCodes.SPACE,
-        ESC: Phaser.Input.Keyboard.KeyCodes.ESC,
-        R: Phaser.Input.Keyboard.KeyCodes.R,
-        F: Phaser.Input.Keyboard.KeyCodes.F,
-        G: Phaser.Input.Keyboard.KeyCodes.G,
+        ESC:   Phaser.Input.Keyboard.KeyCodes.ESC,
+        R:     Phaser.Input.Keyboard.KeyCodes.R,
+        F:     Phaser.Input.Keyboard.KeyCodes.F,
+        G:     Phaser.Input.Keyboard.KeyCodes.G,
       });
 
       this.player      = new PlayerShip(this, startX, cfg.posY, cfg);
@@ -253,6 +296,9 @@
     }
   }
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // UI SCENE
+  // ═══════════════════════════════════════════════════════════════════════════
   class UIScene extends Phaser.Scene {
     constructor() { super({ key: 'UIScene' }); }
     create()  {}
@@ -261,9 +307,6 @@
 
   // ═══════════════════════════════════════════════════════════════════════════
   // PHASER CONFIG
-  // parent  → named div so Phaser doesn't fight the iframe body layout
-  // scale.mode NONE → game is fixed 596×842; the iframe itself is sized by
-  //   the host page, keeping scroll behaviour outside the canvas clean
   // ═══════════════════════════════════════════════════════════════════════════
   const config = {
     type: Phaser.AUTO,
